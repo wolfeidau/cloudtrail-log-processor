@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: "wolfeidau: Listen for s3 events and publish them to an SNS Topic to enable fanout of reads."
+
+Parameters:
+  AppName:
+    Type: String
+    Description: The name of the application.
+  Stage:
+    Type: String
+    Description: The stage of development, e.g., dev, test, prod.
+    Default: dev
+  Branch:
+    Type: String
+    Description: The branch used to deploy.
+    Default: master
+  BucketName:
+    Type: String
+    Description: The name of the bucket to monitor.
+
+Globals:
+  Function:
+    Runtime: go1.x
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        STAGE: !Ref Stage
+        BRANCH: !Ref Branch
+
+Resources:
+  S3EventsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      # encrypted at rest using the provided service key
+      KmsMasterKeyId:  alias/aws/sns 
+
+  CloudtrailS3Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../../dist/handler.zip
+      Handler: s3-lambda
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !Ref S3EventsTopic
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref BucketName
+      Events:
+        S3:
+          Type: S3
+          Properties:
+            Bucket: !Ref BucketName
+            Events: s3:ObjectCreated:*
+Outputs:
+  AppName:
+    Value: !Ref AppName
+  Stage:
+    Value: !Ref Stage
+  Branch:
+    Value: !Ref Branch
+  S3EventsTopic:
+    Value: !Ref S3EventsTopic
