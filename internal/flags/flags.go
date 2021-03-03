@@ -2,9 +2,9 @@ package flags
 
 import "github.com/alecthomas/kong"
 
-// S3Events s3 events flags
-type S3Events struct {
-	Version    kong.VersionFlag
-	TopicName  string
-	BucketName string
+// S3Processor s3 processor flags
+type S3Processor struct {
+	Version                    kong.VersionFlag
+	CloudtrailBucketName       string
+	CloudtrailOutputBucketName string
 }

@@ -14,6 +14,16 @@ Parameters:
     Type: String
     Description: The branch used to deploy.
     Default: master
+  CloudtrailBucketName:
+    Type: String
+    Description: The name of the cloudtrail bucket to source files.
+  CloudtrailTopicArn:
+    Type: String
+    Description: The name of the topic to monitor.
+
+Conditions:
+  IsProd:
+    !Equals [!Ref Stage, "prod"]
 
 Globals:
   Function:
@@ -61,4 +71,35 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../../dist/handler.zip
-      Handler: s3-lambda
+      Handler: filter-lambda
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref CloudtrailBucketName
+        - S3WritePolicy:
+            BucketName: !Ref CloudtrailOutputBucket
+      Environment:
+        Variables:
+          CLOUDTRAIL_OUTPUT_BUCKET_NAME: !Ref CloudtrailOutputBucket
+      Events:
+        SNSEvent:
+          Type: SNS
+          Properties:
+            Topic: !Ref CloudtrailTopicArn
+
+  CloudtrailS3LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${CloudtrailS3Function}"
+      RetentionInDays: !If [IsProd, 365, 14]
+
+Outputs:
+  AppName:
+    Value: !Ref AppName
+  Stage:
+    Value: !Ref Stage
+  Branch:
+    Value: !Ref Branch
+  CloudtrailOutputBucketName:
+    Value: !Ref CloudtrailOutputBucket
+  CloudtrailS3LogGroupName:
+    Value: !Ref CloudtrailS3LogGroup
