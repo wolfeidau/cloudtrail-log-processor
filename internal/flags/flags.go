@@ -5,6 +5,6 @@ import "github.com/alecthomas/kong"
 // S3Processor s3 processor flags
 type S3Processor struct {
 	Version                    kong.VersionFlag
-	CloudtrailBucketName       string
-	CloudtrailOutputBucketName string
+	CloudtrailOutputBucketName string `env:"CLOUDTRAIL_OUTPUT_BUCKET_NAME"`
+	ConfigSSMParam             string `env:"CONFIG_SSM_PARAM"`
 }

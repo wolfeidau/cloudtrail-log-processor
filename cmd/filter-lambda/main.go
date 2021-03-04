@@ -4,9 +4,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/rs/zerolog/log"
 	"github.com/wolfeidau/cloudtrail-log-processor/internal/flags"
-	"github.com/wolfeidau/cloudtrail-log-processor/internal/rules"
 	"github.com/wolfeidau/cloudtrail-log-processor/internal/snsevents"
 	lmw "github.com/wolfeidau/lambda-go-extras/middleware"
 	"github.com/wolfeidau/lambda-go-extras/middleware/raw"
@@ -26,23 +24,7 @@ func main() {
 
 	flds := lmw.FieldMap{"version": version}
 
-	rulesCfg := &rules.Configuration{
-		Rules: []rules.Rule{
-			{
-				Name: "check_kms",
-				Matches: []rules.Match{
-					{FieldName: "eventName", Matches: ".*crypt"},
-				},
-			},
-		},
-	}
-
-	err := rulesCfg.Validate()
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to load rules")
-	}
-
-	ps := snsevents.NewProcessor(*cfg, &aws.Config{}, rulesCfg)
+	ps := snsevents.NewProcessor(*cfg, &aws.Config{})
 
 	ch := lmw.New(
 		raw.New(raw.Fields(flds)),   // raw event logger primarily used during development

@@ -36,6 +36,21 @@ Globals:
         BRANCH: !Ref Branch
 
 Resources:
+  ConfigValue:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/config/${Stage}/${Branch}/${AppName}/config"
+      Type: String
+      Value: |
+        ---
+        rules:
+          - name: check_kms
+            matches:
+            - field_name: eventName
+              matches: ".*crypt"
+            - field_name: eventSource
+              matches: "kms.*"
+
   CloudtrailOutputBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -77,9 +92,12 @@ Resources:
             BucketName: !Ref CloudtrailBucketName
         - S3WritePolicy:
             BucketName: !Ref CloudtrailOutputBucket
+        - SSMParameterReadPolicy:
+            ParameterName: !Sub "config/${Stage}/${Branch}/${AppName}/config"
       Environment:
         Variables:
           CLOUDTRAIL_OUTPUT_BUCKET_NAME: !Ref CloudtrailOutputBucket
+          CONFIG_SSM_PARAM: !Sub "/config/${Stage}/${Branch}/${AppName}/config"
       Events:
         SNSEvent:
           Type: SNS

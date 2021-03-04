@@ -2,9 +2,14 @@ package rules
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/rs/zerolog/log"
+	"github.com/wolfeidau/ssmcache"
+	"gopkg.in/yaml.v2"
 )
 
 var fields = map[string]string{
@@ -83,6 +88,41 @@ func (cr *Configuration) EvalRules(evt map[string]interface{}) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// Load load the configuration from the provided string
+func Load(rawCfg string) (*Configuration, error) {
+	ctr := new(Configuration)
+
+	err := yaml.Unmarshal([]byte(rawCfg), ctr)
+	if err != nil {
+		return nil, err
+	}
+
+	return ctr, nil
+}
+
+// LoadFromSSMAndValidate load the configuration from ssmcache and validate it
+func LoadFromSSMAndValidate(ctx context.Context, ssm ssmcache.Cache, path string) (*Configuration, error) {
+
+	log.Ctx(ctx).Info().Str("path", path).Msg("loading config from ssmcache")
+
+	rawCfg, err := ssm.GetKey(path, false) // config is not encrypted
+	if err != nil {
+		return nil, fmt.Errorf("read config from ssm failed: %w", err)
+	}
+
+	rulesCfg, err := Load(rawCfg)
+	if err != nil {
+		return nil, fmt.Errorf("load rules configuration failed: %w", err)
+	}
+
+	err = rulesCfg.Validate()
+	if err != nil {
+		return nil, fmt.Errorf("rules validation failed: %w", err)
+	}
+
+	return rulesCfg, nil
 }
 
 // Rule rule with a name, and one or more matches

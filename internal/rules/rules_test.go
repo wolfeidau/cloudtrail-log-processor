@@ -1,11 +1,12 @@
 package rules
 
 import (
+	"context"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"github.com/wolfeidau/cloudtrail-log-processor/mocks"
 )
 
 var yamlConfig = `
@@ -23,12 +24,8 @@ rules:
 func TestRules(t *testing.T) {
 	assert := require.New(t)
 
-	ctr := new(Configuration)
-
-	err := yaml.Unmarshal([]byte(yamlConfig), ctr)
+	ctr, err := Load(yamlConfig)
 	assert.NoError(err)
-
-	spew.Dump(ctr)
 
 	err = ctr.Validate()
 	assert.NoError(err)
@@ -46,4 +43,20 @@ func TestRules(t *testing.T) {
 	})
 	assert.NoError(err)
 	assert.False(match)
+}
+
+func TestLoadFromSSMAndValidate(t *testing.T) {
+	assert := require.New(t)
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ssm := mocks.NewMockCache(ctrl)
+
+	ssm.EXPECT().GetKey("/config/whatever", false).Return("{}", nil)
+
+	rulesCfg, err := LoadFromSSMAndValidate(context.TODO(), ssm, "/config/whatever")
+	assert.NoError(err)
+
+	assert.Equal(&Configuration{}, rulesCfg)
 }

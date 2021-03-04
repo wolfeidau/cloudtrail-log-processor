@@ -4,7 +4,7 @@ This project illustrates how you can process and filter cloudtrail logs using la
 
 # Overview
 
-WIP
+This function filters cloudtrail data and uploads the filtered data to an output bucket.
 
 # License
 

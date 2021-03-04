@@ -26,6 +26,11 @@ $(BIN_DIR)/mockgen:
 	@go get -u github.com/golang/mock/mockgen
 	@env GOBIN=$(BIN_DIR) GO111MODULE=on go install github.com/golang/mock/mockgen
 
+mocks: $(BIN_DIR)/mockgen
+	@echo "--- build all the mocks"
+	@bin/mockgen -destination=mocks/ssmcache.go -package=mocks github.com/wolfeidau/ssmcache Cache
+.PHONY: mocks
+
 clean:
 	@echo "--- clean all the things"
 	@rm -rf ./dist
