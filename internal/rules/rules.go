@@ -8,17 +8,19 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
+	"github.com/wolfeidau/cloudtrail-log-processor/internal/slice"
 	"github.com/wolfeidau/ssmcache"
 	"gopkg.in/yaml.v2"
 )
 
-var fields = map[string]string{
-	"eventName":   "",
-	"eventSource": "",
-	"awsRegion":   "",
-	"accountId":   "",
+var fields = []string{
+	"eventName",
+	"eventSource",
+	"awsRegion",
+	"recipientAccountId",
 }
 
+// ValidationErrors provide a list of field errors during validation
 type ValidationErrors []FieldError
 
 func (ve ValidationErrors) Error() string {
@@ -33,10 +35,15 @@ func (ve ValidationErrors) Error() string {
 	return strings.TrimSpace(buff.String())
 }
 
+// FieldError provide a field error during validation with a description
 type FieldError struct {
 	Index       int
 	Field       string
 	Description string
+}
+
+func (re FieldError) Error() string {
+	return fmt.Sprintf("rule index: %d field: %s error: %s", re.Index, re.Field, re.Description)
 }
 
 // Configuration configuration containing our rules which are used to filter events
@@ -55,8 +62,7 @@ func (cr *Configuration) Validate() error {
 		}
 
 		for _, mtch := range rule.Matches {
-			_, ok := fields[mtch.FieldName]
-			if !ok {
+			if !slice.ContainsString(fields, mtch.FieldName) {
 				valErrors = append(valErrors, FieldError{Index: n, Field: mtch.FieldName, Description: "invalid field"})
 			}
 

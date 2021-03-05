@@ -28,7 +28,7 @@ The fields in cloudtrail which can used to filter records are:
 * eventName
 * eventSource
 * awsRegion
-* accountId
+* recipientAccountId
 
 # License
 

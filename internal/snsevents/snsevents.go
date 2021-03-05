@@ -94,7 +94,7 @@ func (ps *Processor) processFile(ctx context.Context, bucket, key string, rulesC
 	log.Ctx(ctx).Info().Int("input", len(inct.Records)).Msg("completed")
 
 	// filter events
-	outct, err := ps.filterRecords(inct, rulesCfg)
+	outct, err := ps.filterRecords(ctx, inct, rulesCfg)
 	if err != nil {
 		return fmt.Errorf("failed to filter records: %w", err)
 	}
@@ -154,7 +154,7 @@ func (ps *Processor) downloadCloudtrail(ctx context.Context, bucket, key string)
 	return inct, nil
 }
 
-func (ps *Processor) filterRecords(inct *Cloudtrail, rulesCfg *rules.Configuration) (*Cloudtrail, error) {
+func (ps *Processor) filterRecords(ctx context.Context, inct *Cloudtrail, rulesCfg *rules.Configuration) (*Cloudtrail, error) {
 
 	outct := new(Cloudtrail)
 
@@ -166,6 +166,13 @@ func (ps *Processor) filterRecords(inct *Cloudtrail, rulesCfg *rules.Configurati
 		if err != nil {
 			return nil, fmt.Errorf("unmarshal record failed: %w", err)
 		}
+
+		log.Ctx(ctx).Debug().Fields(map[string]interface{}{
+			"eventName":          rec["eventName"],
+			"eventSource":        rec["eventSource"],
+			"awsRegion":          rec["awsRegion"],
+			"recipientAccountId": rec["recipientAccountId"],
+		}).Msg("eval record")
 
 		match, err := rulesCfg.EvalRules(rec)
 		if err != nil {
