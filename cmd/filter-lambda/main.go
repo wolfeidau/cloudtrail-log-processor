@@ -4,11 +4,12 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/wolfeidau/cloudtrail-log-processor/internal/flags"
-	"github.com/wolfeidau/cloudtrail-log-processor/internal/snsevents"
 	lmw "github.com/wolfeidau/lambda-go-extras/middleware"
 	"github.com/wolfeidau/lambda-go-extras/middleware/raw"
 	zlog "github.com/wolfeidau/lambda-go-extras/middleware/zerolog"
+
+	"github.com/wolfeidau/cloudtrail-log-processor/internal/flags"
+	"github.com/wolfeidau/cloudtrail-log-processor/internal/snsevents"
 )
 
 var (

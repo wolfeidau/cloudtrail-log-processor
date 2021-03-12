@@ -6,6 +6,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+
 	"github.com/wolfeidau/cloudtrail-log-processor/mocks"
 )
 
@@ -15,9 +16,9 @@ rules:
   - name: check_kms
     matches:
     - field_name: eventName
-      matches: ".*crypt"
+      regex: ".*crypt"
     - field_name: eventSource
-      matches: "kms.*"
+      regex: "kms.*"
 
 `
 
@@ -53,10 +54,22 @@ func TestLoadFromSSMAndValidate(t *testing.T) {
 
 	ssm := mocks.NewMockCache(ctrl)
 
-	ssm.EXPECT().GetKey("/config/whatever", false).Return("{}", nil)
+	ssm.EXPECT().GetKey("/config/whatever", false).Return(yamlConfig, nil)
 
 	rulesCfg, err := LoadFromSSMAndValidate(context.TODO(), ssm, "/config/whatever")
 	assert.NoError(err)
 
-	assert.Equal(&Configuration{}, rulesCfg)
+	assert.Equal(&Configuration{Rules: []*Rule{{
+		Name: "check_kms",
+		Matches: []*Match{
+			{
+				FieldName: "eventName",
+				Regex:     ".*crypt",
+			},
+			{
+				FieldName: "eventSource",
+				Regex:     "kms.*",
+			},
+		},
+	}}}, rulesCfg)
 }

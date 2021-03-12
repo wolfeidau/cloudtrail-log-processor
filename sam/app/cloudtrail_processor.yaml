@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: "wolfeidau: OpenID proxy server HTTP API."
+Description: "wolfeidau: Cloudtrail log processor."
 
 Parameters:
   AppName:
@@ -20,6 +20,10 @@ Parameters:
   CloudtrailTopicArn:
     Type: String
     Description: The name of the topic to monitor.
+  SNSPayloadType:
+    Type: String
+    Description: The payload type in the SNS messages, e.g. cloudtrail or s3
+    Default: cloudtrail
 
 Conditions:
   IsProd:
@@ -47,9 +51,28 @@ Resources:
           - name: check_kms
             matches:
             - field_name: eventName
-              matches: ".*crypt"
+              regex: ".*crypt"
             - field_name: eventSource
-              matches: "kms.*"
+              regex: "kms.*"
+
+  CloudtrailOutputTopic:
+    Type: AWS::SNS::Topic
+    Properties: {}
+
+  CloudtrailOutputTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+      - !Ref CloudtrailOutputTopic
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Sid: sns-s3
+          Effect: Allow
+          Principal:
+            Service: s3.amazonaws.com
+          Resource: '*'
+          Action: sns:Publish
 
   CloudtrailOutputBucket:
     Type: AWS::S3::Bucket
@@ -63,6 +86,10 @@ Resources:
         BlockPublicPolicy: True
         IgnorePublicAcls: True
         RestrictPublicBuckets: True
+      NotificationConfiguration:
+        TopicConfigurations:
+        - Topic: !Ref CloudtrailOutputTopic
+          Event: "s3:ObjectCreated:*"        
 
   CloudtrailOutputBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -80,7 +107,7 @@ Resources:
               - !Sub "arn:aws:s3:::${CloudtrailOutputBucket}"
             Condition:
               Bool:
-                "aws:SecureTransport": "false"
+                "aws:SecureTransport": "false"                
 
   CloudtrailS3Function:
     Type: AWS::Serverless::Function
@@ -92,12 +119,20 @@ Resources:
             BucketName: !Ref CloudtrailBucketName
         - S3WritePolicy:
             BucketName: !Ref CloudtrailOutputBucket
-        - SSMParameterReadPolicy:
-            ParameterName: !Sub "config/${Stage}/${Branch}/${AppName}/config"
+        - Version: '2012-10-17' 
+          Statement:
+            - Effect: "Allow"
+              Action:
+                - ssm:GetParameters
+                - ssm:GetParameter
+                - ssm:GetParametersByPath
+              Resource:
+                - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ConfigValue}"
       Environment:
         Variables:
           CLOUDTRAIL_OUTPUT_BUCKET_NAME: !Ref CloudtrailOutputBucket
-          CONFIG_SSM_PARAM: !Sub "/config/${Stage}/${Branch}/${AppName}/config"
+          CONFIG_SSM_PARAM: !Ref ConfigValue
+          SNS_PAYLOAD_TYPE: !Ref SNSPayloadType
       Events:
         SNSEvent:
           Type: SNS
@@ -119,5 +154,7 @@ Outputs:
     Value: !Ref Branch
   CloudtrailOutputBucketName:
     Value: !Ref CloudtrailOutputBucket
+  CloudtrailOutputTopicArn:
+    Value: !Ref CloudtrailOutputTopic
   CloudtrailS3LogGroupName:
     Value: !Ref CloudtrailS3LogGroup

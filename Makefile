@@ -29,6 +29,8 @@ $(BIN_DIR)/mockgen:
 mocks: $(BIN_DIR)/mockgen
 	@echo "--- build all the mocks"
 	@bin/mockgen -destination=mocks/ssmcache.go -package=mocks github.com/wolfeidau/ssmcache Cache
+	@bin/mockgen -destination=mocks/s3.go -package=mocks github.com/wolfeidau/cloudtrail-log-processor/internal/snsevents S3API
+	@bin/mockgen -destination=mocks/s3manager.go -package=mocks github.com/wolfeidau/cloudtrail-log-processor/internal/snsevents UploaderAPI
 .PHONY: mocks
 
 clean:

@@ -1,83 +1,31 @@
 package rules
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"regexp"
-	"strings"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/rs/zerolog/log"
-	"github.com/wolfeidau/cloudtrail-log-processor/internal/slice"
 	"github.com/wolfeidau/ssmcache"
 	"gopkg.in/yaml.v2"
 )
 
-var fields = []string{
-	"eventName",
-	"eventSource",
-	"awsRegion",
-	"recipientAccountId",
-}
-
-// ValidationErrors provide a list of field errors during validation
-type ValidationErrors []FieldError
-
-func (ve ValidationErrors) Error() string {
-
-	buff := bytes.NewBufferString("")
-
-	for i := 0; i < len(ve); i++ {
-		buff.WriteString(fmt.Sprintf("rule index: %d field: %s error: %s", ve[i].Index, ve[i].Field, ve[i].Description))
-		buff.WriteString("\n")
-	}
-
-	return strings.TrimSpace(buff.String())
-}
-
-// FieldError provide a field error during validation with a description
-type FieldError struct {
-	Index       int
-	Field       string
-	Description string
-}
-
-func (re FieldError) Error() string {
-	return fmt.Sprintf("rule index: %d field: %s error: %s", re.Index, re.Field, re.Description)
-}
-
 // Configuration configuration containing our rules which are used to filter events
 type Configuration struct {
-	Rules []Rule `yaml:"rules,omitempty"`
+	Rules []*Rule `yaml:"rules" validate:"required,dive"`
 }
 
 // Validate validate the configuration rules
 func (cr *Configuration) Validate() error {
-	var valErrors ValidationErrors
-	for n, rule := range cr.Rules {
+	validate := validator.New()
 
-		if rule.Name == "" {
-			valErrors = append(valErrors, FieldError{Index: n, Field: "", Description: "missing name"})
-
-		}
-
-		for _, mtch := range rule.Matches {
-			if !slice.ContainsString(fields, mtch.FieldName) {
-				valErrors = append(valErrors, FieldError{Index: n, Field: mtch.FieldName, Description: "invalid field"})
-			}
-
-			_, err := regexp.Compile(mtch.Matches)
-			if err != nil {
-				valErrors = append(valErrors, FieldError{Index: n, Field: mtch.FieldName, Description: fmt.Sprintf("invalid regex: %v", err)})
-			}
-		}
+	err := validate.RegisterValidation("is-regex", ValidateIsRegex)
+	if err != nil {
+		return err
 	}
 
-	if len(valErrors) > 0 {
-		return valErrors
-	}
-
-	return nil
+	return validate.Struct(cr)
 }
 
 // EvalRules iterate over all rules and return a match if one evaluates to true
@@ -90,7 +38,6 @@ func (cr *Configuration) EvalRules(evt map[string]interface{}) (bool, error) {
 		if match {
 			return true, nil
 		}
-
 	}
 
 	return false, nil
@@ -110,7 +57,6 @@ func Load(rawCfg string) (*Configuration, error) {
 
 // LoadFromSSMAndValidate load the configuration from ssmcache and validate it
 func LoadFromSSMAndValidate(ctx context.Context, ssm ssmcache.Cache, path string) (*Configuration, error) {
-
 	log.Ctx(ctx).Info().Str("path", path).Msg("loading config from ssmcache")
 
 	rawCfg, err := ssm.GetKey(path, false) // config is not encrypted
@@ -133,20 +79,19 @@ func LoadFromSSMAndValidate(ctx context.Context, ssm ssmcache.Cache, path string
 
 // Rule rule with a name, and one or more matches
 type Rule struct {
-	Name    string  `json:"name,omitempty"`
-	Matches []Match `json:"matches,omitempty"`
+	Name    string   `yaml:"name" validate:"required"`
+	Matches []*Match `yaml:"matches" validate:"required,dive"`
 }
 
 // Match match containing the field to be checked and the REGEX used to match
 type Match struct {
-	FieldName string `yaml:"field_name,omitempty"`
-	Matches   string `yaml:"matches,omitempty"`
+	FieldName string `yaml:"field_name" validate:"required,oneof=eventName eventSource awsRegion recipientAccountId"`
+	Regex     string `yaml:"regex" validate:"is-regex"`
 }
 
 // Eval evaluate the match for a given event, this will run each field check in the rule
 // if ALL evaluate to true
 func (mc *Rule) Eval(evt map[string]interface{}) (bool, error) {
-
 	b := true
 
 	for k, v := range evt {
@@ -158,7 +103,7 @@ func (mc *Rule) Eval(evt map[string]interface{}) (bool, error) {
 					continue
 				}
 
-				mt, err := regexp.MatchString(mtch.Matches, vs)
+				mt, err := regexp.MatchString(mtch.Regex, vs)
 				if err != nil {
 					return false, err
 				}
@@ -169,4 +114,10 @@ func (mc *Rule) Eval(evt map[string]interface{}) (bool, error) {
 	}
 
 	return b, nil
+}
+
+// ValidateIsRegex implements validator.Func
+func ValidateIsRegex(fl validator.FieldLevel) bool {
+	_, err := regexp.Compile(fl.Field().String())
+	return err == nil
 }

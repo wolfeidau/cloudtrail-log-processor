@@ -8,29 +8,36 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager/s3manageriface"
 	"github.com/rs/zerolog/log"
 	"github.com/segmentio/encoding/json"
+	"github.com/wolfeidau/ssmcache"
+
 	"github.com/wolfeidau/cloudtrail-log-processor/internal/flags"
 	"github.com/wolfeidau/cloudtrail-log-processor/internal/rules"
-	"github.com/wolfeidau/ssmcache"
 )
+
+type S3API interface {
+	GetObjectWithContext(aws.Context, *s3.GetObjectInput, ...request.Option) (*s3.GetObjectOutput, error)
+}
+
+type UploaderAPI interface {
+	UploadWithContext(aws.Context, *s3manager.UploadInput, ...func(*s3manager.Uploader)) (*s3manager.UploadOutput, error)
+}
 
 // Processor translates s3 events into sns messages
 type Processor struct {
-	s3svc     s3iface.S3API
-	uploadsvc s3manageriface.UploaderAPI
+	s3svc     S3API
+	uploadsvc UploaderAPI
 	cfg       flags.S3Processor
 	ssm       ssmcache.Cache
 }
 
 // NewProcessor setup a new s3 event processor
 func NewProcessor(cfg flags.S3Processor, awscfg *aws.Config) *Processor {
-
 	sess := session.Must(session.NewSession(awscfg))
 
 	return &Processor{
@@ -60,26 +67,45 @@ func (ps *Processor) Handler(ctx context.Context, payload []byte) ([]byte, error
 	}
 
 	for _, snsrec := range snsEvent.Records {
-
 		log.Ctx(ctx).Info().Str("id", snsrec.SNS.MessageID).Msg("Records")
 
-		s3Event := new(CloudtrailSNSEvent)
+		switch ps.cfg.SNSPayloadType {
+		case "cloudtrail":
+			s3Event := new(CloudtrailSNSEvent)
 
-		err := json.Unmarshal([]byte(snsrec.SNS.Message), s3Event)
-		if err != nil {
-			log.Ctx(ctx).Error().Err(err).Msg("Unmarshal")
-			return nil, err
-		}
-
-		log.Ctx(ctx).Info().Strs("objects", s3Event.S3ObjectKey).Str("bucket", s3Event.S3Bucket).Msg("s3Event")
-
-		for _, s3rec := range s3Event.S3ObjectKey {
-			err := ps.processFile(ctx, s3Event.S3Bucket, s3rec, rulesCfg)
+			err := json.Unmarshal([]byte(snsrec.SNS.Message), s3Event)
 			if err != nil {
-				log.Ctx(ctx).Error().Err(err).Msg("failed to process file")
+				log.Ctx(ctx).Error().Err(err).Msg("Unmarshal")
 				return nil, err
 			}
+
+			for _, s3ObjectKey := range s3Event.S3ObjectKeys {
+				err := ps.processFile(ctx, s3Event.S3Bucket, s3ObjectKey, rulesCfg)
+				if err != nil {
+					log.Ctx(ctx).Error().Err(err).Msg("failed to process file")
+					return nil, err
+				}
+			}
+		case "s3":
+			s3Event := new(events.S3Event)
+			err := json.Unmarshal([]byte(snsrec.SNS.Message), s3Event)
+			if err != nil {
+				log.Ctx(ctx).Error().Err(err).Msg("Unmarshal")
+				return nil, err
+			}
+
+			for _, s3EventRecord := range s3Event.Records {
+				err := ps.processFile(ctx, s3EventRecord.S3.Bucket.Name, s3EventRecord.S3.Object.Key, rulesCfg)
+				if err != nil {
+					log.Ctx(ctx).Error().Err(err).Msg("failed to process file")
+					return nil, err
+				}
+			}
+
+		default:
+			return nil, fmt.Errorf("failed to process SNSPayloadType: %s", ps.cfg.SNSPayloadType)
 		}
+
 	}
 
 	return []byte(""), nil
@@ -105,13 +131,11 @@ func (ps *Processor) processFile(ctx context.Context, bucket, key string, rulesC
 
 	go uj.Start(pwr, outct)
 
-	uploadParams := &s3manager.UploadInput{
+	uploadRes, err := ps.uploadsvc.UploadWithContext(ctx, &s3manager.UploadInput{
 		Body:   pr,
 		Bucket: aws.String(ps.cfg.CloudtrailOutputBucketName),
 		Key:    aws.String(key),
-	}
-
-	uploadRes, err := ps.uploadsvc.Upload(uploadParams)
+	})
 	if err != nil {
 		return fmt.Errorf("failed to upload file to output bucket: %w", err)
 	}
@@ -131,7 +155,7 @@ func (ps *Processor) processFile(ctx context.Context, bucket, key string, rulesC
 }
 
 func (ps *Processor) downloadCloudtrail(ctx context.Context, bucket, key string) (*Cloudtrail, error) {
-	res, err := ps.s3svc.GetObject(&s3.GetObjectInput{
+	res, err := ps.s3svc.GetObjectWithContext(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
@@ -139,7 +163,9 @@ func (ps *Processor) downloadCloudtrail(ctx context.Context, bucket, key string)
 		return nil, err
 	}
 
-	defer res.Body.Close()
+	defer func() {
+		_ = res.Body.Close()
+	}()
 
 	inct := new(Cloudtrail)
 	decoder := json.NewDecoder(res.Body)
@@ -155,7 +181,6 @@ func (ps *Processor) downloadCloudtrail(ctx context.Context, bucket, key string)
 }
 
 func (ps *Processor) filterRecords(ctx context.Context, inct *Cloudtrail, rulesCfg *rules.Configuration) (*Cloudtrail, error) {
-
 	outct := new(Cloudtrail)
 
 	outct.Records = inct.Records[:0]
@@ -196,8 +221,8 @@ type Cloudtrail struct {
 
 // CloudtrailSNSEvent event provided in the default SNS topic when a new file is written to the s3 bucket
 type CloudtrailSNSEvent struct {
-	S3Bucket    string   `json:"s3Bucket,omitempty"`
-	S3ObjectKey []string `json:"s3ObjectKey,omitempty"`
+	S3Bucket     string   `json:"s3Bucket,omitempty"`
+	S3ObjectKeys []string `json:"s3ObjectKey,omitempty"`
 }
 
 // helps track encoding / streaming errors for a go routine
@@ -212,6 +237,6 @@ func (uj *uploadJob) Start(pwr io.WriteCloser, out interface{}) {
 	encoder := json.NewEncoder(gw)
 	encoder.SetSortMapKeys(false)
 	uj.Error = encoder.Encode(out)
-	gw.Close()
-	pwr.Close()
+	_ = gw.Close()
+	_ = pwr.Close()
 }
