@@ -1,15 +1,11 @@
 package snsevents
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/golang/mock/gomock"
 	"github.com/rs/zerolog/log"
 	"github.com/segmentio/encoding/json"
@@ -18,17 +14,6 @@ import (
 	"github.com/wolfeidau/cloudtrail-log-processor/internal/flags"
 	"github.com/wolfeidau/cloudtrail-log-processor/mocks"
 )
-
-var yamlConfig = `
----
-rules:
-  - name: check_kms
-    matches:
-    - field_name: eventName
-      regex: ".*crypt"
-    - field_name: eventSource
-      regex: "kms.*"
-`
 
 var (
 	goodSNSCloudtrailEvent = &events.SNSEvent{Records: []events.SNSEventRecord{
@@ -92,9 +77,7 @@ func TestProcessor_Handler(t *testing.T) {
 			defer ctrl.Finish()
 
 			ctx := log.Logger.WithContext(context.TODO())
-			fmt.Println("setup")
 			ps := tt.setup(ctrl, tt.cfg)
-			fmt.Println("Handler")
 			got, err := ps.Handler(ctx, tt.args.payload)
 			if (err != nil) != tt.wantErr {
 				assert.Error(err)
@@ -105,24 +88,13 @@ func TestProcessor_Handler(t *testing.T) {
 }
 
 func processorSuccess(ctrl *gomock.Controller, cfg flags.S3Processor) *Processor {
-	ssm := mocks.NewMockCache(ctrl)
-	s3svc := mocks.NewMockS3API(ctrl)
-	uploadsvc := mocks.NewMockUploaderAPI(ctrl)
+	copier := mocks.NewMockCopier(ctrl)
 
-	ssm.EXPECT().GetKey("/config/whatever", false).Return(yamlConfig, nil)
-
-	s3svc.EXPECT().GetObjectWithContext(gomock.Any(), &s3.GetObjectInput{
-		Bucket: aws.String("testbucket"), Key: aws.String("test")}, gomock.Any(),
-	).Return(&s3.GetObjectOutput{Body: aws.ReadSeekCloser(bytes.NewBufferString("{}"))}, nil)
-
-	uploadsvc.EXPECT().UploadWithContext(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&s3manager.UploadOutput{UploadID: "test"}, nil)
+	copier.EXPECT().Copy(gomock.Any(), "testbucket", "test").Return(nil)
 
 	return &Processor{
-		cfg:       cfg,
-		ssm:       ssm,
-		s3svc:     s3svc,
-		uploadsvc: uploadsvc,
+		cfg:    cfg,
+		copier: copier,
 	}
 }
 

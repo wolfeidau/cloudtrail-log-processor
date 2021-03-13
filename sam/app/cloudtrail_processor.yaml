@@ -71,7 +71,7 @@ Resources:
           Effect: Allow
           Principal:
             Service: s3.amazonaws.com
-          Resource: '*'
+          Resource: !Ref CloudtrailOutputTopic
           Action: sns:Publish
 
   CloudtrailOutputBucket:
