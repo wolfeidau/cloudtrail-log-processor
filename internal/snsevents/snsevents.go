@@ -78,7 +78,6 @@ func (ps *Processor) Handler(ctx context.Context, payload []byte) ([]byte, error
 		default:
 			return nil, fmt.Errorf("failed to process SNSPayloadType: %s", ps.cfg.SNSPayloadType)
 		}
-
 	}
 
 	return []byte(""), nil

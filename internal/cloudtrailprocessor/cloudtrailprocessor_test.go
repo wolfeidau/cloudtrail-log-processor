@@ -11,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/golang/mock/gomock"
 	"github.com/rs/zerolog/log"
-	"github.com/segmentio/encoding/json"
 	"github.com/stretchr/testify/require"
 
 	"github.com/wolfeidau/cloudtrail-log-processor/internal/flags"
@@ -91,20 +90,4 @@ func copierSuccess(ctrl *gomock.Controller, cfg flags.S3Processor) *S3Copier {
 		s3svc:     s3svc,
 		uploadsvc: uploadsvc,
 	}
-
-}
-
-func mustJSON(in interface{}) []byte {
-	data, err := json.Marshal(in)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println(string(data))
-
-	return data
-}
-
-func mustJSONString(in interface{}) string {
-	return string(mustJSON(in))
 }

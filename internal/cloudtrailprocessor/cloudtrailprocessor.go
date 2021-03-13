@@ -13,9 +13,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/rs/zerolog/log"
 	"github.com/segmentio/encoding/json"
+	"github.com/wolfeidau/ssmcache"
+
 	"github.com/wolfeidau/cloudtrail-log-processor/internal/flags"
 	"github.com/wolfeidau/cloudtrail-log-processor/internal/rules"
-	"github.com/wolfeidau/ssmcache"
 )
 
 type S3API interface {
@@ -56,7 +57,6 @@ func NewCopier(cfg flags.S3Processor, awscfg *aws.Config) Copier {
 }
 
 func (cp *S3Copier) Copy(ctx context.Context, bucket, key string) error {
-
 	rulesCfg, err := rules.LoadFromSSMAndValidate(ctx, cp.ssm, cp.cfg.ConfigSSMParam)
 	if err != nil {
 		log.Ctx(ctx).Error().Err(err).Msg("Unmarshal")
